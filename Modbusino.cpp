@@ -54,10 +54,11 @@ static uint16_t crc16(uint8_t *req, uint8_t req_length)
     return (crc << 8 | crc >> 8);
 }
 
-ModbusinoSlave::ModbusinoSlave(uint8_t slave)
+ModbusinoSlave::ModbusinoSlave(uint8_t slave, forward_t forward_func)
 {
     if (slave >= 0 && slave <= 247) {
         _slave = slave;
+        _forward_func = forward_func;
     }
 }
 
@@ -131,7 +132,7 @@ static void flush(void)
     } while (Serial.available() && i++ < 10);
 }
 
-static int receive(uint8_t *req, uint8_t _slave)
+static int receive(uint8_t *req, uint8_t _slave, uint8_t forwarding, uint8_t *msg_length)
 {
     uint8_t i;
     uint8_t length_to_read;
@@ -173,8 +174,10 @@ static int receive(uint8_t *req, uint8_t _slave)
         if (length_to_read == 0) {
             if (req[_MODBUS_RTU_SLAVE] != _slave
                 && req[_MODBUS_RTU_SLAVE != MODBUS_BROADCAST_ADDRESS]) {
-                flush();
-                return -1 - MODBUS_INFORMATIVE_NOT_FOR_US;
+                if (!forwarding) {
+                    flush();
+                    return -1 - MODBUS_INFORMATIVE_NOT_FOR_US;
+                }
             }
 
             switch (step) {
@@ -229,6 +232,7 @@ static int receive(uint8_t *req, uint8_t _slave)
             }
         }
     }
+    *msg_length = req_index;
     return check_integrity(req, req_index);
 }
 
@@ -287,11 +291,18 @@ int ModbusinoSlave::loop(uint16_t *tab_reg, uint16_t nb_reg)
 {
     int rc = 0;
     uint8_t req[_MODBUSINO_RTU_MAX_ADU_LENGTH];
+    uint8_t msg_length;
 
     if (Serial.available()) {
-        rc = receive(req, _slave);
+        rc = receive(req, _slave, _forward_func != NULL, &msg_length);
         if (rc > 0) {
-            reply(tab_reg, nb_reg, req, rc, _slave);
+            if (req[_MODBUS_RTU_SLAVE] != _slave
+                && req[_MODBUS_RTU_SLAVE != MODBUS_BROADCAST_ADDRESS]) {
+                _forward_func(req, msg_length);
+                return 0;
+            } else {
+                reply(tab_reg, nb_reg, req, rc, _slave);
+            }
         }
     }
 

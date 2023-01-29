@@ -28,13 +28,17 @@
 #define MODBUS_INFORMATIVE_NOT_FOR_US   4
 #define MODBUS_INFORMATIVE_RX_TIMEOUT   5
 
+
 class ModbusinoSlave {
+private:
+    typedef void (*forward_t)(uint8_t *msg, uint8_t msg_length);
 public:
-    ModbusinoSlave(uint8_t slave);
+    ModbusinoSlave(uint8_t slave, forward_t forward_func = NULL);
     void setup(long baud);
     int loop(uint16_t *tab_reg, uint16_t nb_reg);
 private:
     int _slave;
+    forward_t _forward_func;
 };
 
 #endif
