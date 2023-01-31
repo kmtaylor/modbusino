@@ -119,13 +119,16 @@ static uint8_t response_exception(uint8_t slave, uint8_t function,
 static void flush(void)
 {
     uint8_t i = 0;
+    uint8_t j;
 
     /* Wait a moment to receive the remaining garbage but avoid getting stuck
      * because the line is saturated */
-    while (Serial.available() && i++ < 10) {
-        Serial.flush();
+    do {
         delay(3);
-    }
+        for (j = 0; j < 64; j++) {
+            Serial.read();
+        }
+    } while (Serial.available() && i++ < 10);
 }
 
 static int receive(uint8_t *req, uint8_t _slave)
