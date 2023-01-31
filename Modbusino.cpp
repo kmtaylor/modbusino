@@ -31,6 +31,8 @@ segfault for longer ADU */
 
 /* Supported function codes */
 #define _FC_READ_HOLDING_REGISTERS 0x03
+#define _FC_READ_INPUT_REGISTERS 0x04
+#define _FC_WRITE_SINGLE_REGISTER 0x06
 #define _FC_WRITE_MULTIPLE_REGISTERS 0x10
 
 enum { _STEP_FUNCTION = 0x01, _STEP_META, _STEP_DATA };
@@ -138,7 +140,7 @@ static int receive(uint8_t *req, uint8_t _slave, uint8_t forwarding, uint8_t *ms
     uint8_t length_to_read;
     uint8_t req_index;
     uint8_t step;
-    uint8_t function;
+    uint8_t function = -1;
 
     /* We need to analyse the message step by step.  At the first step, we want
      * to reach the function code because all packets contain this
@@ -184,7 +186,10 @@ static int receive(uint8_t *req, uint8_t _slave, uint8_t forwarding, uint8_t *ms
             case _STEP_FUNCTION:
                 /* Function code position */
                 function = req[_MODBUS_RTU_FUNCTION];
-                if (function == _FC_READ_HOLDING_REGISTERS) {
+                if (function == _FC_READ_HOLDING_REGISTERS
+                    || function == _FC_READ_INPUT_REGISTERS) {
+                    length_to_read = 4;
+                } else if (function == _FC_WRITE_SINGLE_REGISTER) {
                     length_to_read = 4;
                 } else if (function == _FC_WRITE_MULTIPLE_REGISTERS) {
                     length_to_read = 5;
@@ -253,13 +258,18 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
         return;
     }
 
+    if (function == _FC_WRITE_SINGLE_REGISTER) {
+        nb = 1;
+    }
+
     if (address + nb > nb_reg) {
         rsp_length = response_exception(
             slave, function, MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, rsp);
     } else {
         req_length -= _MODBUS_RTU_CHECKSUM_LENGTH;
 
-        if (function == _FC_READ_HOLDING_REGISTERS) {
+        if (function == _FC_READ_HOLDING_REGISTERS
+            || function == _FC_READ_INPUT_REGISTERS) {
             uint16_t i;
 
             rsp_length = build_response_basis(slave, function, rsp);
@@ -269,9 +279,13 @@ static void reply(uint16_t *tab_reg, uint16_t nb_reg, uint8_t *req,
                 rsp[rsp_length++] = tab_reg[i] & 0xFF;
             }
         } else {
-            uint16_t i, j;
+            uint16_t i, j = 6;
 
-            for (i = address, j = 6; i < address + nb; i++, j += 2) {
+            if (function == _FC_WRITE_SINGLE_REGISTER) {
+                j = 3;
+            }
+
+            for (i = address; i < address + nb; i++, j += 2) {
                 /* 6 and 7 = first value */
                 tab_reg[i] = (req[_MODBUS_RTU_FUNCTION + j] << 8)
                              + req[_MODBUS_RTU_FUNCTION + j + 1];
